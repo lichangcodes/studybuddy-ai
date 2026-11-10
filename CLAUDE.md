@@ -29,10 +29,12 @@ Environment variables are listed in `.env.example` (Clerk, Supabase, Vapi); real
 
 **Auth flows from Clerk into Supabase.** `lib/supabase.ts` creates a Supabase client per call whose `accessToken` is the current Clerk session token (Clerk ↔ Supabase third-party auth). Any row-level security therefore keys off the Clerk user id (`auth.jwt()->>'sub'`), and rows store Clerk user ids in `author` / `user_id`. `middleware.ts` runs `clerkMiddleware()` without protecting any routes — each page checks `auth()` / `currentUser()` itself and redirects to `/sign-in`.
 
-**Database schema is not in the repo** (it was created in the Supabase dashboard). Tables used by the code:
-- `companions` — `id`, `name`, `subject`, `topic`, `voice`, `style`, `duration`, `author`, `created_at`
-- `session_history` — `companion_id` → companions, `user_id`, `created_at`
-- `bookmarks` — `companion_id` → companions, `user_id`
+**Database schema lives in `supabase/migrations/`.** There is no Supabase CLI setup; migrations are applied by pasting them into the Supabase SQL Editor. Add a new timestamped file for every schema change instead of editing applied ones. Tables:
+- `companions` — `id`, `name`, `subject`, `topic`, `voice`, `style`, `duration`, `author`, `created_at`. Readable by everyone; insert only as yourself.
+- `session_history` — `companion_id` → companions, `user_id`, `created_at`. Private: read/insert own rows only.
+- `bookmarks` — `companion_id` → companions, `user_id`, unique per (user, companion). Private: read/insert/delete own rows only.
+
+RLS policies compare `user_id` / `author` with `auth.jwt()->>'sub'`. No table has UPDATE policies, and companions have no DELETE policy — adding those features needs a migration. Because session rows are private, the cross-user "recent sessions" list on the home page goes through the `get_recent_sessions` security-definer function, which never returns user ids.
 
 Joins use PostgREST embedding, e.g. `.select('companions:companion_id (*)')`.
 

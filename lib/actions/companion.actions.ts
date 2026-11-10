@@ -90,16 +90,16 @@ export const addToSessionHistory = async (companionId: string) => {
 
 export const getRecentSessions = async (limit = 10) => {
     const supabase = createSupabaseClient();
+    // Session rows are private under RLS; this function returns recent sessions across
+    // all users without exposing who ran them.
     const { data, error } = await supabase
-        .from('session_history')
-        .select(`id, companions:companion_id (*)`)
-        .order('created_at', { ascending: false })
-        .limit(limit)
+        .rpc('get_recent_sessions', { max_rows: limit })
 
     if(error) throw new Error(error.message);
 
     // The same companion can appear in several sessions, so keep the session id for list keys.
-    return data.map(({ id, companions }) => ({ ...companions, sessionId: id }));
+    return (data as { session_id: string; companion: Companion }[])
+        .map(({ session_id, companion }) => ({ ...companion, sessionId: session_id }));
 }
 
 export const getUserSessions = async (userId: string, limit = 10) => {
@@ -176,7 +176,8 @@ export const addBookmark = async (companionId: string, path: string) => {
     companion_id: companionId,
     user_id: userId,
   });
-  if (error) {
+  // 23505 = unique violation: the companion is already bookmarked, which is fine.
+  if (error && error.code !== "23505") {
     throw new Error(error.message);
   }
   // Revalidate the path to force a re-render of the page
