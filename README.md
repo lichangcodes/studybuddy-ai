@@ -9,7 +9,6 @@ A voice-first AI learning platform. Users build personalized "learning companion
 - **Library with search and filters** — filter by subject and search by topic or name
 - **Learning journey** — session history, bookmarks, and the companions you created
 - **Subscription plans** — plan-based limits on how many companions a user can create (Clerk Billing)
-- **Error monitoring** — Sentry on client, server, and edge
 
 ## Tech Stack
 
@@ -20,7 +19,6 @@ A voice-first AI learning platform. Users build personalized "learning companion
 | Database | Supabase (PostgreSQL) |
 | Auth & billing | Clerk |
 | Voice AI | Vapi (Deepgram STT, OpenAI LLM, ElevenLabs TTS) |
-| Monitoring | Sentry |
 
 ## Getting Started
 
