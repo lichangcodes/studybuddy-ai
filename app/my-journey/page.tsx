@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import {
   getUserCompanions,
   getUserSessions,
+  getUserSessionCount,
   getBookmarkedCompanions,
 } from "@/lib/actions/companion.actions";
 import Image from "next/image";
@@ -21,6 +22,7 @@ const Profile = async () => {
 
   const companions = await getUserCompanions(user.id);
   const sessionHistory = await getUserSessions(user.id);
+  const sessionCount = await getUserSessionCount(user.id);
   const bookmarkedCompanions = await getBookmarkedCompanions(user.id);
 
   return (
@@ -51,7 +53,7 @@ const Profile = async () => {
                 width={22}
                 height={22}
               />
-              <p className="text-2xl font-bold">{sessionHistory.length}</p>
+              <p className="text-2xl font-bold">{sessionCount}</p>
             </div>
             <div>Lessons completed</div>
           </div>

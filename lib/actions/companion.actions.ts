@@ -116,6 +116,18 @@ export const getUserSessions = async (userId: string, limit = 10) => {
     return data.map(({ id, companions }) => ({ ...companions, sessionId: id }));
 }
 
+export const getUserSessionCount = async (userId: string) => {
+    const supabase = createSupabaseClient();
+    const { count, error } = await supabase
+        .from('session_history')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+
+    if(error) throw new Error(error.message);
+
+    return count ?? 0;
+}
+
 export const getUserCompanions = async (userId: string) => {
     const supabase = createSupabaseClient();
     const { data, error } = await supabase
