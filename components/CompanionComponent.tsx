@@ -68,7 +68,7 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
             vapi.off('speech-start', onSpeechStart);
             vapi.off('speech-end', onSpeechEnd);
         }
-    }, []);
+    }, [companionId]);
 
     const toggleMicrophone = () => {
         const isMuted = vapi.isMuted();
@@ -85,7 +85,7 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
             serverMessages: [],
         }
 
-        // @ts-expect-error
+        // @ts-expect-error Vapi SDK types clientMessages as object[][], but the API takes message type names
         vapi.start(configureAssistant(voice, style, duration), assistantOverrides)
     }
 
