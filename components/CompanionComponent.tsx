@@ -22,6 +22,8 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
     const [messages, setMessages] = useState<SavedMessage[]>([]);
 
     const lottieRef = useRef<LottieRefCurrentProps>(null);
+    // Only calls that actually connected count as a completed session.
+    const callStartedRef = useRef(false);
 
     useEffect(() => {
         if(lottieRef) {
@@ -34,11 +36,17 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
     }, [isSpeaking, lottieRef])
 
     useEffect(() => {
-        const onCallStart = () => setCallStatus(CallStatus.ACTIVE);
+        const onCallStart = () => {
+            callStartedRef.current = true;
+            setCallStatus(CallStatus.ACTIVE);
+        }
 
         const onCallEnd = () => {
             setCallStatus(CallStatus.FINISHED);
-            addToSessionHistory(companionId)
+            if(callStartedRef.current) {
+                callStartedRef.current = false;
+                addToSessionHistory(companionId)
+            }
         }
 
         const onMessage = (message: Message) => {
@@ -86,7 +94,11 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
         }
 
         // @ts-expect-error Vapi SDK types clientMessages as object[][], but the API takes message type names
-        vapi.start(configureAssistant(voice, style, duration), assistantOverrides)
+        const call = await vapi.start(configureAssistant(voice, style, duration), assistantOverrides)
+            .catch(() => null);
+
+        // start() resolves to null when the call could not be created (e.g. microphone denied).
+        if(!call) setCallStatus(CallStatus.INACTIVE);
     }
 
     const handleDisconnect = () => {
@@ -102,7 +114,7 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
                         <div
                             className={
                             cn(
-                                'absolute transition-opacity duration-1000', callStatus === CallStatus.FINISHED || callStatus === CallStatus.INACTIVE ? 'opacity-1001' : 'opacity-0', callStatus === CallStatus.CONNECTING && 'opacity-100 animate-pulse'
+                                'absolute transition-opacity duration-1000', callStatus === CallStatus.FINISHED || callStatus === CallStatus.INACTIVE ? 'opacity-100' : 'opacity-0', callStatus === CallStatus.CONNECTING && 'opacity-100 animate-pulse'
                             )
                         }>
                             <Image src={`/icons/${subject}.svg`} alt={subject} width={150} height={150} className="max-sm:w-fit" />
@@ -133,7 +145,7 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
                             {isMuted ? 'Turn on microphone' : 'Turn off microphone'}
                         </p>
                     </button>
-                    <button className={cn('rounded-lg py-2 cursor-pointer transition-colors w-full text-white', callStatus ===CallStatus.ACTIVE ? 'bg-red-700' : 'bg-primary', callStatus === CallStatus.CONNECTING && 'animate-pulse')} onClick={callStatus === CallStatus.ACTIVE ? handleDisconnect : handleCall}>
+                    <button className={cn('rounded-lg py-2 cursor-pointer transition-colors w-full text-white', callStatus ===CallStatus.ACTIVE ? 'bg-red-700' : 'bg-primary', callStatus === CallStatus.CONNECTING && 'animate-pulse')} onClick={callStatus === CallStatus.ACTIVE ? handleDisconnect : handleCall} disabled={callStatus === CallStatus.CONNECTING}>
                         {callStatus === CallStatus.ACTIVE
                         ? "End Session"
                         : callStatus === CallStatus.CONNECTING
@@ -153,7 +165,7 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
                                     {
                                         name
                                             .split(' ')[0]
-                                            .replace('/[.,]/g, ','')
+                                            .replace(/[.,]/g, '')
                                     }: {message.content}
                                 </p>
                             )

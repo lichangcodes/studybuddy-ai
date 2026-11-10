@@ -36,7 +36,8 @@ export class MockVapi extends EventEmitter {
             });
         }
 
-        return null;
+        // Stands in for the Call object the real client resolves with.
+        return {};
     }
 
     stop() {

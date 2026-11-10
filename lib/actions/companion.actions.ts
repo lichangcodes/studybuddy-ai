@@ -67,11 +67,14 @@ export const getCompanion = async (id: string) => {
     const { data, error } = await supabase
         .from('companions')
         .select()
-        .eq('id', id);
+        .eq('id', id)
+        .maybeSingle();
 
-    if(error) return console.log(error);
+    // 22P02 = invalid uuid syntax, i.e. a malformed id in the URL: treat as not found.
+    if(error?.code === '22P02') return null;
+    if(error) throw new Error(error.message);
 
-    return data[0];
+    return data;
 }
 
 export const addToSessionHistory = async (companionId: string) => {
