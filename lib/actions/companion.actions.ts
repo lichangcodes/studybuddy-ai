@@ -3,19 +3,39 @@
 import {auth} from "@clerk/nextjs/server";
 import {createSupabaseClient} from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
+import {companionSchema, type CompanionInput} from "@/lib/validations";
 
-export const createCompanion = async (formData: CreateCompanion) => {
+type CreateCompanionResult =
+    | { success: true; data: { id: string } }
+    | { success: false; error: string };
+
+// Returns a result instead of throwing so the form can show the reason;
+// Next.js hides thrown error messages from the client in production.
+export const createCompanion = async (formData: CompanionInput): Promise<CreateCompanionResult> => {
     const { userId: author } = await auth();
+    if(!author) return { success: false, error: 'You must be signed in to create a companion.' };
+
+    const parsed = companionSchema.safeParse(formData);
+    if(!parsed.success) return { success: false, error: 'Invalid companion details.' };
+
+    // The new-companion page also checks this, but the action can be called directly,
+    // so the limit has to be enforced here too.
+    if(!(await newCompanionPermissions())) {
+        return { success: false, error: 'You have reached your companion limit. Upgrade your plan to create more.' };
+    }
+
     const supabase = createSupabaseClient();
 
+    // Insert only validated fields so callers cannot set columns like id or created_at.
     const { data, error } = await supabase
         .from('companions')
-        .insert({...formData, author })
-        .select();
+        .insert({ ...parsed.data, author })
+        .select('id')
+        .single();
 
-    if(error || !data) throw new Error(error?.message || 'Failed to create a companion');
+    if(error || !data) return { success: false, error: 'Failed to create a companion.' };
 
-    return data[0];
+    return { success: true, data };
 }
 
 export const getAllCompanions = async ({ limit = 10, page = 1, subject, topic }: GetAllCompanions) => {
@@ -109,7 +129,7 @@ export const getUserCompanions = async (userId: string) => {
 
 export const newCompanionPermissions = async () => {
     const { userId, has } = await auth();
-    const supabase = createSupabaseClient();
+    if(!userId) return false;
 
     let limit = 0;
 
@@ -121,20 +141,17 @@ export const newCompanionPermissions = async () => {
         limit = 10;
     }
 
-    const { data, error } = await supabase
+    const supabase = createSupabaseClient();
+
+    // head: true makes Postgres return only the count, not the rows.
+    const { count, error } = await supabase
         .from('companions')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
         .eq('author', userId)
 
     if(error) throw new Error(error.message);
 
-    const companionCount = data?.length;
-
-    if(companionCount >= limit) {
-        return false
-    } else {
-        return true;
-    }
+    return (count ?? 0) < limit;
 }
 
 // Bookmarks

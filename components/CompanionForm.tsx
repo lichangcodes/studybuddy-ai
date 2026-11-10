@@ -2,7 +2,6 @@
 
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import {
     Form,
@@ -24,38 +23,33 @@ import {
 import {subjects} from "@/constants";
 import {Textarea} from "@/components/ui/textarea";
 import {createCompanion} from "@/lib/actions/companion.actions";
-import {redirect} from "next/navigation";
+import {useRouter} from "next/navigation";
+import {companionSchema, type CompanionInput} from "@/lib/validations";
 
-const formSchema = z.object({
-    name: z.string().min(1, { message: 'Companion is required.'}),
-    subject: z.string().min(1, { message: 'Subject is required.'}),
-    topic: z.string().min(1, { message: 'Topic is required.'}),
-    voice: z.string().min(1, { message: 'Voice is required.'}),
-    style: z.string().min(1, { message: 'Style is required.'}),
-    duration: z.coerce.number().min(1, { message: 'Duration is required.'}),
-})
+// Selects start empty so they show their placeholder; the schema rejects '' on submit.
+const defaultValues = {
+    name: '',
+    subject: '',
+    topic: '',
+    voice: '',
+    style: '',
+    duration: 15,
+} as unknown as CompanionInput;
 
 const CompanionForm = () => {
-    const form = useForm<z.infer<typeof formSchema>>({
-        resolver: zodResolver(formSchema),
-        defaultValues: {
-            name: '',
-            subject: '',
-            topic: '',
-            voice: '',
-            style: '',
-            duration: 15,
-        },
+    const router = useRouter();
+    const form = useForm<CompanionInput>({
+        resolver: zodResolver(companionSchema),
+        defaultValues,
     })
 
-    const onSubmit = async (values: z.infer<typeof formSchema>) => {
-        const companion = await createCompanion(values);
+    const onSubmit = async (values: CompanionInput) => {
+        const result = await createCompanion(values);
 
-        if(companion) {
-            redirect(`/companions/${companion.id}`);
+        if(result.success) {
+            router.push(`/companions/${result.data.id}`);
         } else {
-            console.log('Failed to create a companion');
-            redirect('/');
+            form.setError('root', { message: result.error });
         }
     }
 
@@ -210,7 +204,10 @@ const CompanionForm = () => {
                         </FormItem>
                     )}
                 />
-                <Button type="submit" className="w-full cursor-pointer">Build Your Companion</Button>
+                {form.formState.errors.root && (
+                    <p className="text-sm text-destructive">{form.formState.errors.root.message}</p>
+                )}
+                <Button type="submit" className="w-full cursor-pointer" disabled={form.formState.isSubmitting}>Build Your Companion</Button>
             </form>
         </Form>
     )

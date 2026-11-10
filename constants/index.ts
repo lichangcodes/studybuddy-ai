@@ -5,7 +5,7 @@ export const subjects = [
   "history",
   "coding",
   "economics",
-];
+] as const;
 
 export const subjectsColors = {
   science: "#E5D0FF",
