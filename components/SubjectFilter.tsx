@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
     Select,
     SelectContent,
@@ -19,18 +19,17 @@ const SubjectFilter = () => {
 
     const [subject, setSubject] = useState(query);
 
-    useEffect(() => {
-        let newUrl = "";
-        if (subject === "all") {
-            newUrl = removeQueryParams(searchParams.toString(), ["subject"]);
-        } else {
-            newUrl = setQueryParam(searchParams.toString(), "subject", subject);
-        }
+    // Update the URL when the user picks a subject, not on mount.
+    const handleChange = (value: string) => {
+        setSubject(value);
+        const newUrl = value === "all"
+            ? removeQueryParams(searchParams.toString(), ["subject"])
+            : setQueryParam(searchParams.toString(), "subject", value);
         router.push(newUrl, { scroll: false });
-    }, [subject]);
+    };
 
     return (
-        <Select onValueChange={setSubject} value={subject}>
+        <Select onValueChange={handleChange} value={subject}>
             <SelectTrigger className="input capitalize">
                 <SelectValue placeholder="Subject" />
             </SelectTrigger>
