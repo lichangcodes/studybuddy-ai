@@ -1,9 +1,11 @@
 "use client";
 import { removeBookmark } from "@/lib/actions/companion.actions";
 import { addBookmark } from "@/lib/actions/companion.actions";
+import { useAuth } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useOptimistic, useTransition } from "react";
 
 interface CompanionCardProps {
   id: string;
@@ -25,23 +27,36 @@ const CompanionCard = ({
   bookmarked,
 }: CompanionCardProps) => {
   const pathname = usePathname();
-  const handleBookmark = async () => {
-    if (bookmarked) {
-      await removeBookmark(id, pathname);
-    } else {
-      await addBookmark(id, pathname);
+  const router = useRouter();
+  const { isSignedIn } = useAuth();
+  const [isPending, startTransition] = useTransition();
+  // Flip the icon immediately; it settles to the server value once the page revalidates.
+  const [optimisticBookmarked, setOptimisticBookmarked] = useOptimistic(bookmarked);
+
+  const handleBookmark = () => {
+    if (!isSignedIn) {
+      router.push("/sign-in");
+      return;
     }
+    startTransition(async () => {
+      setOptimisticBookmarked(!bookmarked);
+      if (bookmarked) {
+        await removeBookmark(id, pathname);
+      } else {
+        await addBookmark(id, pathname);
+      }
+    });
   };
   return (
     <article className="companion-card" style={{ backgroundColor: color }}>
       <div className="flex justify-between items-center">
         <div className="subject-badge">{subject}</div>
-        <button className="companion-bookmark" onClick={handleBookmark}>
+        <button className="companion-bookmark" onClick={handleBookmark} disabled={isPending}>
           <Image
             src={
-              bookmarked ? "/icons/bookmark-filled.svg" : "/icons/bookmark.svg"
+              optimisticBookmarked ? "/icons/bookmark-filled.svg" : "/icons/bookmark.svg"
             }
-            alt="bookmark"
+            alt={optimisticBookmarked ? "Remove bookmark" : "Bookmark"}
             width={12.5}
             height={15}
           />

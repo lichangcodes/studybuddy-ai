@@ -202,6 +202,21 @@ export const removeBookmark = async (companionId: string, path: string) => {
   return data;
 };
 
+// Ids of the current user's bookmarked companions, used to render bookmark state on cards.
+export const getBookmarkedCompanionIds = async () => {
+  const { userId } = await auth();
+  if (!userId) return [];
+  const supabase = createSupabaseClient();
+  const { data, error } = await supabase
+    .from("bookmarks")
+    .select("companion_id")
+    .eq("user_id", userId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data.map(({ companion_id }) => companion_id as string);
+};
+
 // It's almost the same as getUserCompanions, but it's for the bookmarked companions
 export const getBookmarkedCompanions = async (userId: string) => {
   const supabase = createSupabaseClient();
