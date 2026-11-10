@@ -39,8 +39,8 @@ Joins use PostgREST embedding, e.g. `.select('companions:companion_id (*)')`.
 **Plan limits come from Clerk Billing.** `newCompanionPermissions()` checks `has({ plan: 'pro' })` and the features `3_companion_limit` / `10_companion_limit`, then counts the user's companions. It is only called when rendering `app/companions/new/page.tsx`; `createCompanion` does not enforce it. `/subscription` renders Clerk's `<PricingTable />`.
 
 **Voice session flow** (`components/CompanionComponent.tsx`):
-- `lib/vapi.sdk.ts` exports a single client-side `Vapi` instance.
-- `configureAssistant(voice, style)` in `lib/utils.ts` builds a transient assistant (Deepgram STT → OpenAI → ElevenLabs TTS). The system prompt uses `{{topic}}`, `{{subject}}`, `{{style}}` placeholders, which are filled by `variableValues` passed to `vapi.start`.
+- `lib/vapi.sdk.ts` exports a single client-side `Vapi` instance. With `NEXT_PUBLIC_VAPI_MOCK=true` it exports `MockVapi` (`lib/vapi.mock.ts`) instead, which replays a scripted lesson with the same events (`call-start`, `speech-*`, `message`, `call-end`) and uses no Vapi credits — prefer it when testing anything that is not the voice pipeline itself.
+- `configureAssistant(voice, style, duration)` in `lib/utils.ts` builds a transient assistant (Deepgram STT → OpenAI `gpt-4o-mini` → ElevenLabs TTS). Calls end at the companion's duration (capped by `MAX_SESSION_MINUTES`) or after 20s of silence. The system prompt uses `{{topic}}`, `{{subject}}`, `{{style}}` placeholders, which are filled by `variableValues` passed to `vapi.start`.
 - Voice IDs come from the `voices` map in `constants/index.ts`, keyed by voice (`male`/`female`) and style (`casual`/`formal`).
 - Final transcript messages are kept in component state only (not persisted). On `call-end`, a row is written to `session_history`.
 

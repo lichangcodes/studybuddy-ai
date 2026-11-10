@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { subjects, voices } from "@/constants";
+import { MAX_SESSION_MINUTES, subjects, voices } from "@/constants";
 
 const voiceOptions = Object.keys(voices) as [keyof typeof voices, ...(keyof typeof voices)[]];
 const styleOptions = Object.keys(voices.male) as [keyof typeof voices.male, ...(keyof typeof voices.male)[]];
@@ -12,7 +12,7 @@ export const companionSchema = z.object({
     topic: z.string().trim().min(1, { message: 'Topic is required.'}).max(500),
     voice: z.enum(voiceOptions, { message: 'Voice is required.'}),
     style: z.enum(styleOptions, { message: 'Style is required.'}),
-    duration: z.coerce.number().int().min(1, { message: 'Duration is required.'}).max(120),
+    duration: z.coerce.number().int().min(1, { message: 'Duration is required.'}).max(MAX_SESSION_MINUTES, { message: `Sessions can be at most ${MAX_SESSION_MINUTES} minutes.`}),
 });
 
 export type CompanionInput = z.infer<typeof companionSchema>;

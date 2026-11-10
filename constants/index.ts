@@ -7,6 +7,9 @@ export const subjects = [
   "economics",
 ] as const;
 
+// Upper bound for a voice session; Vapi bills per minute.
+export const MAX_SESSION_MINUTES = 15;
+
 export const subjectsColors = {
   science: "#E5D0FF",
   maths: "#FFDA6E",

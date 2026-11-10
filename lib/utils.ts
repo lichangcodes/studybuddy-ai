@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { subjectsColors, voices } from "@/constants";
+import { MAX_SESSION_MINUTES, subjectsColors, voices } from "@/constants";
 import { CreateAssistantDTO } from "@vapi-ai/web/dist/api";
 
 export function cn(...inputs: ClassValue[]) {
@@ -11,13 +11,17 @@ export const getSubjectColor = (subject: string) => {
   return subjectsColors[subject as keyof typeof subjectsColors];
 };
 
-export const configureAssistant = (voice: string, style: string) => {
+export const configureAssistant = (voice: string, style: string, durationMinutes: number) => {
   const voiceId = voices[voice as keyof typeof voices][
           style as keyof (typeof voices)[keyof typeof voices]
           ] || "sarah";
 
   const vapiAssistant: CreateAssistantDTO = {
     name: "Companion",
+    // End the call at the companion's duration (capped) or after 20s of silence,
+    // so a forgotten session does not keep billing.
+    maxDurationSeconds: Math.min(durationMinutes, MAX_SESSION_MINUTES) * 60,
+    silenceTimeoutSeconds: 20,
     firstMessage:
         "Hello, let's start the session. Today we'll be talking about {{topic}}.",
     transcriber: {
@@ -36,7 +40,7 @@ export const configureAssistant = (voice: string, style: string) => {
     },
     model: {
       provider: "openai",
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
