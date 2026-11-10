@@ -4,6 +4,7 @@ import {auth} from "@clerk/nextjs/server";
 import {createSupabaseClient} from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import {companionSchema, type CompanionInput} from "@/lib/validations";
+import {quoteFilterValue} from "@/lib/utils";
 
 type CreateCompanionResult =
     | { success: true; data: { id: string } }
@@ -43,13 +44,12 @@ export const getAllCompanions = async ({ limit = 10, page = 1, subject, topic }:
 
     let query = supabase.from('companions').select();
 
-    if(subject && topic) {
-        query = query.ilike('subject', `%${subject}%`)
-            .or(`topic.ilike.%${topic}%,name.ilike.%${topic}%`)
-    } else if(subject) {
-        query = query.ilike('subject', `%${subject}%`)
-    } else if(topic) {
-        query = query.or(`topic.ilike.%${topic}%,name.ilike.%${topic}%`)
+    if(subject) {
+        query = query.eq('subject', String(subject))
+    }
+    if(topic) {
+        const pattern = quoteFilterValue(`%${topic}%`);
+        query = query.or(`topic.ilike.${pattern},name.ilike.${pattern}`)
     }
 
     query = query.range((page - 1) * limit, page * limit - 1);

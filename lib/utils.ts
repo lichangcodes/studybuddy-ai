@@ -7,6 +7,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Wrap a value in double quotes for a PostgREST filter string (e.g. inside .or()),
+// so commas, dots and parentheses in user input cannot change the filter's structure.
+export const quoteFilterValue = (value: string) =>
+  `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
 export const getSubjectColor = (subject: string) => {
   return subjectsColors[subject as keyof typeof subjectsColors];
 };
