@@ -12,12 +12,16 @@ StudyBuddy AI — a voice-first AI tutoring app. Users create "companions" (subj
 npm run dev          # dev server (Turbopack) on http://localhost:3000
 npm run build        # production build
 npm run lint         # next lint
-npx tsc --noEmit     # type check — run this explicitly, see below
+npm run typecheck    # tsc --noEmit — run this explicitly, see below
+npm test             # Vitest, single run
+npm run test:watch   # Vitest, watch mode
+npx vitest run lib/actions/companion.actions.test.ts   # one file
+npx vitest run -t "enforces the plan limit"            # tests matching a name
 ```
 
-`next.config.ts` sets `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds`, so `npm run build` succeeds even with type or lint errors. Always run `npx tsc --noEmit` and `npm run lint` to verify changes.
+`next.config.ts` sets `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds`, so `npm run build` succeeds even with type or lint errors. Always run `npm run typecheck`, `npm run lint` and `npm test` to verify changes; CI (`.github/workflows/ci.yml`) runs the same three on every push and PR.
 
-There is no test framework set up yet.
+Tests are colocated as `*.test.ts` and run in Node with no network access. Server action tests mock `@clerk/nextjs/server` (`auth`), `@/lib/supabase` and `next/cache`; `mockSupabase()` in `lib/actions/companion.actions.test.ts` is a chainable fake query builder that records every call and returns queued results per table. RLS policies are not covered by these tests — they only run in the real database.
 
 Environment variables are listed in `.env.example` (Clerk, Supabase, Vapi); real values live in `.env.local`.
 
