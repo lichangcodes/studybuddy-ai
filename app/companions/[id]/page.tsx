@@ -5,6 +5,10 @@ import {getSubjectColor} from "@/lib/utils";
 import Image from "next/image";
 import CompanionComponent from "@/components/CompanionComponent";
 
+// The session-complete action runs a summary model call, which can take longer than
+// the default serverless timeout.
+export const maxDuration = 60;
+
 interface CompanionSessionPageProps {
     params: Promise<{ id: string}>;
 }

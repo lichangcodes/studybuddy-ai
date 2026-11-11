@@ -3,7 +3,8 @@
 import {auth} from "@clerk/nextjs/server";
 import {createSupabaseClient} from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
-import {companionSchema, type CompanionInput} from "@/lib/validations";
+import {companionSchema, transcriptSchema, type CompanionInput} from "@/lib/validations";
+import {isSummaryConfigured, summarizeSession, type SessionSummary, type TranscriptMessage} from "@/lib/summary";
 import {quoteFilterValue} from "@/lib/utils";
 
 // Every readable companion column. `author` (a Clerk user id) is not readable through
@@ -81,18 +82,70 @@ export const getCompanion = async (id: string) => {
     return data;
 }
 
-export const addToSessionHistory = async (companionId: string) => {
+// Every summary is a paid model call, so cap how many one user can trigger per day.
+const DAILY_SUMMARY_LIMIT = 20;
+// Shorter exchanges (a greeting and nothing else) are not worth summarising.
+const MIN_SUMMARY_MESSAGES = 4;
+
+type CompleteSessionResult =
+    | { success: false; error: string }
+    | { success: true; sessionId: string; summary: SessionSummary | null; summaryError?: string };
+
+// Records a finished session, then summarises its transcript with Claude. The session is
+// recorded even when the summary is skipped or fails, so history never depends on the model.
+export const completeSession = async (companionId: string, transcript: TranscriptMessage[]): Promise<CompleteSessionResult> => {
     const { userId } = await auth();
+    if(!userId) return { success: false, error: 'You must be signed in.' };
+
+    const parsed = transcriptSchema.safeParse(transcript);
+    if(!parsed.success) return { success: false, error: 'Invalid transcript.' };
+
     const supabase = createSupabaseClient();
-    const { data, error } = await supabase.from('session_history')
-        .insert({
-            companion_id: companionId,
-            user_id: userId,
-        })
 
-    if(error) throw new Error(error.message);
+    const { data: session, error } = await supabase
+        .from('session_history')
+        .insert({ companion_id: companionId, user_id: userId })
+        .select('id')
+        .single();
 
-    return data;
+    if(error || !session) return { success: false, error: 'Failed to record the session.' };
+
+    const done = (summary: SessionSummary | null, summaryError?: string): CompleteSessionResult =>
+        ({ success: true, sessionId: session.id, summary, ...(summaryError && { summaryError }) });
+
+    if(parsed.data.length < MIN_SUMMARY_MESSAGES) return done(null, 'The lesson was too short to summarise.');
+    if(!isSummaryConfigured()) return done(null, 'Summaries are not available right now.');
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count, error: countError } = await supabase
+        .from('session_summaries')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', since);
+
+    if(countError) return done(null, 'Summaries are not available right now.');
+    if((count ?? 0) >= DAILY_SUMMARY_LIMIT) return done(null, 'You have reached today\'s summary limit.');
+
+    // Subject and topic come from the database, not the client.
+    const companion = await getCompanion(companionId);
+    if(!companion) return done(null, 'Summaries are not available right now.');
+
+    let summary: SessionSummary | null;
+    try {
+        summary = await summarizeSession({ subject: companion.subject, topic: companion.topic, transcript: parsed.data });
+    } catch(e) {
+        console.error('Session summary failed', e);
+        return done(null, 'Could not generate a summary this time.');
+    }
+    if(!summary) return done(null, 'Could not generate a summary this time.');
+
+    const { error: saveError } = await supabase
+        .from('session_summaries')
+        .insert({ session_id: session.id, user_id: userId, transcript: parsed.data, summary });
+
+    if(saveError) console.error('Saving session summary failed', saveError);
+
+    return done(summary);
 }
 
 export const getRecentSessions = async (limit = 10) => {

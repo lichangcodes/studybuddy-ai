@@ -19,3 +19,13 @@ export const companionSchema = z.object({
 export type CompanionFormValues = z.input<typeof companionSchema>;
 // ... and the validated, coerced value the server receives.
 export type CompanionInput = z.output<typeof companionSchema>;
+
+// Transcripts come from the browser, so cap their size before they reach the database
+// or the summary model. System messages are dropped by the client.
+export const MAX_TRANSCRIPT_MESSAGES = 300;
+export const MAX_MESSAGE_LENGTH = 2000;
+
+export const transcriptSchema = z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH),
+})).max(MAX_TRANSCRIPT_MESSAGES);

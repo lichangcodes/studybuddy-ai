@@ -6,7 +6,8 @@ import {isVapiMock, vapi} from "@/lib/vapi.sdk";
 import Image from "next/image";
 import Lottie, {LottieRefCurrentProps} from "lottie-react";
 import soundwaves from '@/constants/soundwaves.json'
-import {addToSessionHistory} from "@/lib/actions/companion.actions";
+import {completeSession} from "@/lib/actions/companion.actions";
+import SessionSummaryCard, {type SummaryState} from "@/components/SessionSummaryCard";
 
 enum CallStatus {
     INACTIVE = 'INACTIVE',
@@ -20,10 +21,13 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [messages, setMessages] = useState<SavedMessage[]>([]);
+    const [summary, setSummary] = useState<SummaryState>({ status: 'idle' });
 
     const lottieRef = useRef<LottieRefCurrentProps>(null);
     // Only calls that actually connected count as a completed session.
     const callStartedRef = useRef(false);
+    // Chronological transcript for the summary; the call-end handler can't read fresh state.
+    const transcriptRef = useRef<{ role: 'user' | 'assistant'; content: string }[]>([]);
 
     useEffect(() => {
         if(lottieRef) {
@@ -38,14 +42,24 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
     useEffect(() => {
         const onCallStart = () => {
             callStartedRef.current = true;
+            transcriptRef.current = [];
+            setSummary({ status: 'idle' });
             setCallStatus(CallStatus.ACTIVE);
         }
 
-        const onCallEnd = () => {
+        const onCallEnd = async () => {
             setCallStatus(CallStatus.FINISHED);
-            if(callStartedRef.current) {
-                callStartedRef.current = false;
-                addToSessionHistory(companionId)
+            if(!callStartedRef.current) return;
+            callStartedRef.current = false;
+
+            setSummary({ status: 'loading' });
+            try {
+                const result = await completeSession(companionId, transcriptRef.current);
+                if(!result.success) setSummary({ status: 'unavailable', reason: result.error });
+                else if(result.summary) setSummary({ status: 'ready', summary: result.summary });
+                else setSummary({ status: 'unavailable', reason: result.summaryError ?? 'No summary for this lesson.' });
+            } catch {
+                setSummary({ status: 'unavailable', reason: 'Could not save this session.' });
             }
         }
 
@@ -53,6 +67,9 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
             if(message.type === 'transcript' && message.transcriptType === 'final') {
                 const newMessage= { role: message.role, content: message.transcript}
                 setMessages((prev) => [newMessage, ...prev])
+                if(message.role === 'user' || message.role === 'assistant') {
+                    transcriptRef.current.push({ role: message.role, content: message.transcript });
+                }
             }
         }
 
@@ -160,6 +177,8 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
                     )}
                 </div>
             </section>
+
+            <SessionSummaryCard state={summary} />
 
             <section className="transcript">
                 <div className="transcript-message no-scrollbar">
