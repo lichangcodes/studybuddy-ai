@@ -2,6 +2,8 @@
 
 A voice-first AI learning platform. Users build personalized "learning companions" (subject, topic, voice, teaching style) and learn through real-time voice conversations with an AI tutor.
 
+**Live demo:** https://studybuddy-ai-ael8.vercel.app (voice sessions are simulated in the demo, so no microphone is needed)
+
 ## Features
 
 - **Real-time voice tutoring** — speech-to-text, LLM, and text-to-speech through Vapi, with a live transcript
