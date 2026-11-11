@@ -5,7 +5,7 @@ vi.mock("@google/genai", () => ({
     GoogleGenAI: class { interactions = { create }; },
 }));
 
-import { SUMMARY_MODEL, SUMMARY_TIMEOUT_MS, summarizeSession } from "@/lib/summary";
+import { RETRY_DELAYS_MS, SUMMARY_MODEL, summarizeSession } from "@/lib/summary";
 
 const summary = { overview: "o", key_points: ["k"], review_questions: ["q"], next_steps: ["n"] };
 const input = {
@@ -19,7 +19,10 @@ const input = {
 
 beforeEach(() => {
     create.mockReset();
+    vi.useRealTimers();
 });
+
+const apiError = (status: number) => Object.assign(new Error(`${status} error`), { status });
 
 describe("summarizeSession", () => {
     it("sends the transcript as labelled data with a JSON schema", async () => {
@@ -42,15 +45,52 @@ describe("summarizeSession", () => {
         );
     });
 
-    it("fails fast instead of retrying, so the student is not left waiting", async () => {
+    it("turns off the SDK's own retries and sets a per-request timeout", async () => {
         create.mockResolvedValue({ output_text: JSON.stringify(summary) });
 
         await summarizeSession(input);
 
-        expect(create.mock.calls[0][1]).toEqual({
-            timeout_ms: SUMMARY_TIMEOUT_MS,
-            retries: { strategy: "none" },
-        });
+        const options = create.mock.calls[0][1];
+        expect(options.retries).toEqual({ strategy: "none" });
+        expect(options.timeout_ms).toBeGreaterThan(0);
+        expect(options.timeout_ms).toBeLessThanOrEqual(20_000);
+    });
+
+    it("retries server errors such as 503 high demand", async () => {
+        vi.useFakeTimers();
+        create
+            .mockRejectedValueOnce(apiError(503))
+            .mockRejectedValueOnce(apiError(500))
+            .mockResolvedValue({ output_text: JSON.stringify(summary) });
+
+        const result = summarizeSession(input);
+        await vi.runAllTimersAsync();
+
+        expect(await result).toEqual(summary);
+        expect(create).toHaveBeenCalledTimes(3);
+    });
+
+    it("gives up after the last retry", async () => {
+        vi.useFakeTimers();
+        create.mockRejectedValue(apiError(503));
+
+        const result = summarizeSession(input);
+        const assertion = expect(result).rejects.toThrow("503 error");
+        await vi.runAllTimersAsync();
+
+        await assertion;
+        expect(create).toHaveBeenCalledTimes(RETRY_DELAYS_MS.length + 1);
+    });
+
+    it.each([
+        ["a rate limit", apiError(429)],
+        ["a bad request", apiError(400)],
+        ["a timeout", new Error("Request timed out")],
+    ])("does not retry %s", async (_label, error) => {
+        create.mockRejectedValue(error);
+
+        await expect(summarizeSession(input)).rejects.toThrow(error.message);
+        expect(create).toHaveBeenCalledTimes(1);
     });
 
     it.each([

@@ -9,7 +9,12 @@ import { z } from "zod";
 // Flash-Lite rather than Flash: summarising a lesson is easy for it, and the free
 // tier's Flash models were often unavailable (503 "high demand").
 export const SUMMARY_MODEL = "gemini-3.5-flash-lite";
-export const SUMMARY_TIMEOUT_MS = 25_000;
+// The student waits on the session page, and the server action has 60s on Vercel.
+export const SUMMARY_DEADLINE_MS = 45_000;
+const ATTEMPT_TIMEOUT_MS = 20_000;
+// Free-tier 503s ("high demand") usually clear within seconds, so retry those
+// quickly. The SDK's own backoff waits far longer than the student would.
+export const RETRY_DELAYS_MS = [1_000, 2_000, 3_000];
 
 export const sessionSummarySchema = z.object({
     overview: z.string(),
@@ -38,6 +43,25 @@ Only include what the lesson actually covered. If the transcript is too short to
 let client: GoogleGenAI | null = null;
 const getClient = () => (client ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Server errors (5xx) are retried; anything else (bad request, rate limit, timeout)
+// is thrown at once, as is the last error once the retries or the deadline run out.
+const withRetries = async <T>(deadline: number, attempt: (timeoutMs: number) => Promise<T>): Promise<T> => {
+    for(let i = 0; ; i++) {
+        try {
+            return await attempt(Math.min(ATTEMPT_TIMEOUT_MS, deadline - Date.now()));
+        } catch(e) {
+            const status = (e as { status?: unknown })?.status;
+            const retryable = typeof status === "number" && status >= 500;
+            const delay = RETRY_DELAYS_MS[i];
+            // Leave at least a few seconds for the next attempt to succeed.
+            if(!retryable || delay === undefined || Date.now() + delay + 5_000 > deadline) throw e;
+            await sleep(delay);
+        }
+    }
+};
+
 export const isSummaryConfigured = () => Boolean(process.env.GEMINI_API_KEY);
 
 // Returns null when the model returns nothing usable (blocked by safety filters, or
@@ -51,20 +75,19 @@ export const summarizeSession = async ({ subject, topic, transcript }: {
         .map(({ role, content }) => `${role === "assistant" ? "Tutor" : "Student"}: ${content}`)
         .join("\n");
 
-    const interaction = await getClient().interactions.create({
+    const request = {
         model: SUMMARY_MODEL,
         system_instruction: SYSTEM_PROMPT,
         input: `Subject: ${subject}\nTopic: ${topic}\n\n<transcript>\n${lines}\n</transcript>`,
         response_format: { type: "text", mime_type: "application/json", schema: summaryJsonSchema },
         // The transcript is stored in our own database; Google doesn't need to keep it.
         store: false,
-    }, {
-        // The student is waiting on the session page, and the server action has 60s
-        // on Vercel. On a 503 ("high demand", common on the free tier) the SDK's
-        // default backoff retries for close to a minute, so fail fast instead.
-        timeout_ms: SUMMARY_TIMEOUT_MS,
-        retries: { strategy: "none" },
-    });
+    } as const;
+
+    const deadline = Date.now() + SUMMARY_DEADLINE_MS;
+    const interaction = await withRetries(deadline, (timeout_ms) =>
+        getClient().interactions.create(request, { timeout_ms, retries: { strategy: "none" } })
+    );
 
     if(!interaction.output_text) return null;
 
