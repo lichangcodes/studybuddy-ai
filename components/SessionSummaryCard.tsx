@@ -3,7 +3,7 @@ import type { SessionSummary } from "@/lib/summary";
 export type SummaryState =
     | { status: 'idle' }
     | { status: 'loading' }
-    | { status: 'ready'; summary: SessionSummary }
+    | { status: 'ready'; summary: SessionSummary; emailQueued?: boolean }
     | { status: 'unavailable'; reason: string };
 
 const Section = ({ title, items, ordered = false }: { title: string; items: string[]; ordered?: boolean }) => {
@@ -40,6 +40,9 @@ const SessionSummaryCard = ({ state }: { state: SummaryState }) => {
                     <Section title="Key points" items={state.summary.key_points} />
                     <Section title="Check yourself" items={state.summary.review_questions} ordered />
                     <Section title="Next steps" items={state.summary.next_steps} />
+                    {state.emailQueued && (
+                        <p className="text-sm text-muted-foreground">A copy is on its way to your inbox.</p>
+                    )}
                 </>
             )}
         </section>

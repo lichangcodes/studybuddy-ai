@@ -10,6 +10,7 @@ A voice-first AI learning platform. Users build personalized "learning companion
 - **Companion builder** — create tutors with a custom subject, topic, voice, style, and session length
 - **Library with search and filters** — filter by subject and search by topic or name
 - **Lesson summaries** — when a session ends, Gemini turns the transcript into key points, review questions and next steps
+- **Summary emails** — a copy of each summary by email (Resend, React Email), with an opt-out in My Journey, one-click unsubscribe headers and a send log
 - **Learning journey** — session history, bookmarks, and the companions you created
 - **Subscription plans** — plan-based limits on how many companions a user can create (Clerk Billing)
 
@@ -23,6 +24,7 @@ A voice-first AI learning platform. Users build personalized "learning companion
 | Auth & billing | Clerk |
 | Voice AI | Vapi (Deepgram STT, OpenAI LLM, ElevenLabs TTS) |
 | Summaries | Gemini API (`gemini-3.5-flash-lite`, structured JSON output) |
+| Email | Resend, `@react-email/render` |
 
 ## Getting Started
 
@@ -44,4 +46,5 @@ The app deploys to Vercel as a standard Next.js project:
 2. Add the variables from `.env.example` under Project Settings → Environment Variables.
 3. For a public demo, set `NEXT_PUBLIC_VAPI_MOCK=true`. Visitors get a simulated lesson on the companion's topic and the page says so, and no Vapi credits are spent.
 4. For post-session summaries, set `GEMINI_API_KEY` (free key from Google AI Studio). Without it, sessions are still recorded but no summary is generated. On the free tier Google may use prompts to improve its products, so use a paid key before handling real user data.
-5. Apply the SQL files in `supabase/migrations/` in order in the Supabase SQL Editor, and add the Clerk domain to Supabase's third-party auth settings.
+5. For summary emails, set `RESEND_API_KEY`. Without a verified domain, Resend's test sender (the default) only delivers to the Resend account's own address; to email every user, verify a domain in Resend and set `EMAIL_FROM` (e.g. `StudyBuddy AI <hello@your-domain>`). Links in emails use Vercel's production URL, or `APP_URL` if set.
+6. Apply the SQL files in `supabase/migrations/` in order in the Supabase SQL Editor, and add the Clerk domain to Supabase's third-party auth settings.

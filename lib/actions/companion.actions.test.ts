@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { createSupabaseClient } from "@/lib/supabase";
 import { isSummaryConfigured, summarizeSession } from "@/lib/summary";
 import { isGeminiConfigured } from "@/lib/gemini";
 import { generateDemoLesson } from "@/lib/demo-lesson";
+import { prepareLessonSummaryEmail, sendAndLogLessonSummaryEmail } from "@/lib/email/deliver";
+import { mockSupabase, signIn, signOut } from "@/lib/test/server-mocks";
 import {
     addBookmark,
     completeSession,
@@ -23,59 +23,11 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/summary", () => ({ summarizeSession: vi.fn(), isSummaryConfigured: vi.fn() }));
 vi.mock("@/lib/gemini", () => ({ isGeminiConfigured: vi.fn() }));
 vi.mock("@/lib/demo-lesson", () => ({ generateDemoLesson: vi.fn() }));
-
-type QueryResult = { data?: unknown; error?: { code?: string; message: string } | null; count?: number | null };
-type Call = { table: string; method: string; args: unknown[] };
-
-// Minimal stand-in for the Supabase query builder: every method call is recorded and
-// chains, and awaiting the query yields the next queued result for that table.
-const mockSupabase = (results: Record<string, QueryResult[]> = {}) => {
-    const calls: Call[] = [];
-
-    const query = (table: string): unknown => {
-        const result = { data: null, error: null, count: null, ...results[table]?.shift() };
-        const builder: unknown = new Proxy({}, {
-            get(_target, prop) {
-                if(prop === "then") {
-                    return (resolve: (r: QueryResult) => unknown, reject: (e: unknown) => unknown) =>
-                        Promise.resolve(result).then(resolve, reject);
-                }
-                return (...args: unknown[]) => {
-                    calls.push({ table, method: String(prop), args });
-                    return builder;
-                };
-            },
-        });
-        return builder;
-    };
-
-    const client = {
-        from: (table: string) => query(table),
-        rpc: (fn: string, args: unknown) => {
-            calls.push({ table: `rpc:${fn}`, method: "rpc", args: [args] });
-            return query(`rpc:${fn}`);
-        },
-    };
-    vi.mocked(createSupabaseClient).mockReturnValue(client as never);
-
-    return {
-        calls,
-        callsTo: (table: string, method: string) =>
-            calls.filter((c) => c.table === table && c.method === method),
-    };
-};
-
-// Clerk's has() answers plan and feature checks; grant only what is listed.
-const signIn = (userId: string, access: { plan?: string; feature?: string } = {}) => {
-    const has = (check: { plan?: string; feature?: string }) =>
-        (check.plan !== undefined && check.plan === access.plan) ||
-        (check.feature !== undefined && check.feature === access.feature);
-    vi.mocked(auth).mockResolvedValue({ userId, has } as never);
-};
-
-const signOut = () => {
-    vi.mocked(auth).mockResolvedValue({ userId: null, has: () => false } as never);
-};
+vi.mock("@/lib/email/deliver", () => ({ prepareLessonSummaryEmail: vi.fn(), sendAndLogLessonSummaryEmail: vi.fn() }));
+// Work handed to after() runs once the response is sent; here it is collected so a
+// test can run it explicitly.
+const afterQueue: (() => unknown)[] = [];
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => { afterQueue.push(fn); } }));
 
 const validCompanion = {
     name: "Neura",
@@ -91,6 +43,8 @@ beforeEach(() => {
     vi.mocked(isSummaryConfigured).mockReturnValue(true);
     vi.mocked(isGeminiConfigured).mockReturnValue(true);
     vi.unstubAllEnvs();
+    afterQueue.length = 0;
+    vi.mocked(prepareLessonSummaryEmail).mockResolvedValue(null);
 });
 
 describe("newCompanionPermissions", () => {
@@ -342,7 +296,7 @@ describe("completeSession", () => {
 
         const result = await completeSession("c1", [...transcript]);
 
-        expect(result).toEqual({ success: true, sessionId: "s1", summary });
+        expect(result).toEqual({ success: true, sessionId: "s1", summary, emailQueued: false });
         expect(calls.callsTo("session_history", "insert")[0].args[0]).toEqual({ companion_id: "c1", user_id: "user_1" });
         expect(summarizeSession).toHaveBeenCalledWith({ subject: "maths", topic: "Calculus", transcript });
         expect(calls.callsTo("session_summaries", "insert")[0].args[0]).toEqual({
@@ -391,6 +345,48 @@ describe("completeSession", () => {
         expect(result).toMatchObject({ success: true, sessionId: "s1", summary: null });
         expect(calls.callsTo("session_history", "insert")).toHaveLength(1);
         expect(calls.callsTo("session_summaries", "insert")).toHaveLength(0);
+    });
+
+    it("emails the summary after the response, and tells the page", async () => {
+        signIn("user_1");
+        db();
+        vi.mocked(summarizeSession).mockResolvedValue(summary);
+        const email = { to: "ada@example.com", firstName: "Ada", unsubscribeToken: "t" };
+        vi.mocked(prepareLessonSummaryEmail).mockResolvedValue(email);
+
+        const result = await completeSession("c1", [...transcript]);
+
+        expect(result).toMatchObject({ success: true, summary, emailQueued: true });
+        expect(prepareLessonSummaryEmail).toHaveBeenCalledWith("user_1");
+        // Not sent yet: the student sees the summary first.
+        expect(sendAndLogLessonSummaryEmail).not.toHaveBeenCalled();
+
+        await Promise.all(afterQueue.map((fn) => fn()));
+        expect(sendAndLogLessonSummaryEmail).toHaveBeenCalledWith({
+            email, userId: "user_1", sessionId: "s1", companion: storedCompanion, summary,
+        });
+    });
+
+    it("does not email when there is no summary", async () => {
+        signIn("user_1");
+        db();
+        vi.mocked(summarizeSession).mockResolvedValue(null);
+
+        await completeSession("c1", [...transcript]);
+
+        expect(prepareLessonSummaryEmail).not.toHaveBeenCalled();
+        expect(afterQueue).toHaveLength(0);
+    });
+
+    it("still returns the summary when preparing the email fails", async () => {
+        signIn("user_1");
+        db();
+        vi.mocked(summarizeSession).mockResolvedValue(summary);
+        vi.mocked(prepareLessonSummaryEmail).mockRejectedValue(new Error("rls"));
+        vi.spyOn(console, "error").mockImplementation(() => {});
+
+        expect(await completeSession("c1", [...transcript])).toMatchObject({ success: true, summary, emailQueued: false });
+        expect(afterQueue).toHaveLength(0);
     });
 
     it("reports failure when the session cannot be recorded", async () => {

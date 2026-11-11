@@ -21,7 +21,7 @@ npx vitest run -t "enforces the plan limit"            # tests matching a name
 
 `next.config.ts` sets `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds`, so `npm run build` succeeds even with type or lint errors. Always run `npm run typecheck`, `npm run lint` and `npm test` to verify changes; CI (`.github/workflows/ci.yml`) runs the same three on every push and PR.
 
-Tests are colocated as `*.test.ts` and run in Node with no network access. Server action tests mock `@clerk/nextjs/server` (`auth`), `@/lib/supabase` and `next/cache`; `mockSupabase()` in `lib/actions/companion.actions.test.ts` is a chainable fake query builder that records every call and returns queued results per table. RLS policies are not covered by these tests — they only run in the real database.
+Tests are colocated as `*.test.ts` and run in Node with no network access. Server action tests mock `@clerk/nextjs/server` (`auth`), `@/lib/supabase` and `next/cache`; `mockSupabase()` (with `signIn`/`signOut`) in `lib/test/server-mocks.ts` is a chainable fake query builder that records every call and returns queued results per table. RLS policies are not covered by these tests — they only run in the real database.
 
 Environment variables are listed in `.env.example` (Clerk, Supabase, Vapi); real values live in `.env.local`.
 
@@ -29,7 +29,7 @@ Environment variables are listed in `.env.example` (Clerk, Supabase, Vapi); real
 
 **Stack:** Next.js 15 App Router + React 19, Clerk (auth and billing), Supabase Postgres, Vapi (voice AI), Tailwind v4 + shadcn/ui.
 
-**No API routes — the backend is Server Actions.** All data access lives in `lib/actions/companion.actions.ts` (`'use server'`). Server components call these directly for reads; client components (e.g. `CompanionForm`, `CompanionComponent`, bookmark buttons) call them for writes. Mutations that change a rendered page call `revalidatePath`.
+**The backend is Server Actions, not API routes** (the one exception is `app/api/unsubscribe`, which mail clients POST to). Data access lives in `lib/actions/companion.actions.ts` and `lib/actions/email.actions.ts` (`'use server'`). Server components call these directly for reads; client components (e.g. `CompanionForm`, `CompanionComponent`, bookmark buttons) call them for writes. Mutations that change a rendered page call `revalidatePath`.
 
 **Auth flows from Clerk into Supabase.** `lib/supabase.ts` creates a Supabase client per call whose `accessToken` is the current Clerk session token (Clerk ↔ Supabase third-party auth). Any row-level security therefore keys off the Clerk user id (`auth.jwt()->>'sub'`), and rows store Clerk user ids in `author` / `user_id`. `middleware.ts` runs `clerkMiddleware()` without protecting any routes — each page checks `auth()` / `currentUser()` itself and redirects to `/sign-in`.
 
@@ -37,10 +37,15 @@ Environment variables are listed in `.env.example` (Clerk, Supabase, Vapi); real
 - `companions` — `id`, `name`, `subject`, `topic`, `voice`, `style`, `duration`, `author`, `created_at`. Rows are readable by everyone; insert only as yourself. The `author` column is not readable through the API (column privileges), so queries must select `COMPANION_COLUMNS` instead of `*` (including in embeddings), and the signed-in user's own companions come from the `get_my_companions` / `count_my_companions` functions.
 - `session_history` — `companion_id` → companions, `user_id`, `created_at`. Private: read/insert own rows only.
 - `bookmarks` — `companion_id` → companions, `user_id`, unique per (user, companion). Private: read/insert/delete own rows only.
+- `session_summaries` — `session_id` → session_history (unique), `user_id`, `transcript`, `summary` (jsonb). Private: read own; insert only for your own session.
+- `email_preferences` — one row per user: `summary_emails` (default on; no row means on) and a secret `unsubscribe_token`. Users read/insert/update their own row but cannot set or change the token (column privileges). The `unsubscribe_summary_emails(token)` security-definer function, callable by anon, only turns emails off.
+- `email_log` — one row per send attempt (`status` sent/failed, Resend message id or error), unique per (session, kind). Read own; insert only for your own session.
 
-RLS policies compare `user_id` / `author` with `auth.jwt()->>'sub'`. No table has UPDATE policies, and companions have no DELETE policy — adding those features needs a migration. Because session rows are private, the cross-user "recent sessions" list on the home page goes through the `get_recent_sessions` security-definer function, which returns each companion's latest session and never returns user ids or authors. Supabase grants execute on new functions to `anon` directly, so restricting a function means revoking from `public, anon`.
+RLS policies compare `user_id` / `author` with `auth.jwt()->>'sub'`. Only `email_preferences` has an UPDATE policy, and companions have no DELETE policy — adding those features needs a migration. Because session rows are private, the cross-user "recent sessions" list on the home page goes through the `get_recent_sessions` security-definer function, which returns each companion's latest session and never returns user ids or authors. Supabase grants execute on new functions to `anon` directly, so restricting a function means revoking from `public, anon`.
 
 Joins use PostgREST embedding, e.g. `.select('companions:companion_id (*)')`.
+
+**Summary emails** (`lib/email/`): `completeSession` calls `prepareLessonSummaryEmail` (preference, Clerk address, unsubscribe token) before returning, then sends with `after()` so the student isn't kept waiting; the send is logged in `email_log` and never throws. The template is plain JSX with tables and inline styles (`LessonSummaryEmail.tsx`), rendered to HTML and text with `@react-email/render`. Unsubscribe links go to `/unsubscribe` (a button, since link scanners prefetch URLs) and the `List-Unsubscribe-Post` one-click header to the `app/api/unsubscribe` route handler — the only API route. Without a verified domain, Resend only delivers to the account owner, so other users' sends are logged as failed.
 
 **Plan limits come from Clerk Billing.** `newCompanionPermissions()` checks `has({ plan: 'pro' })` and the features `3_companion_limit` / `10_companion_limit`, then counts the user's companions. It is called when rendering `app/companions/new/page.tsx` and again inside `createCompanion`, so the limit holds even when the action is called directly. `/subscription` renders Clerk's `<PricingTable />`.
 

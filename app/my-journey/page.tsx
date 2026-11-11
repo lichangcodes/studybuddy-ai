@@ -14,6 +14,8 @@ import {
 } from "@/lib/actions/companion.actions";
 import Image from "next/image";
 import CompanionsList from "@/components/CompanionsList";
+import SummaryEmailToggle from "@/components/SummaryEmailToggle";
+import { getSummaryEmailsEnabled } from "@/lib/actions/email.actions";
 
 const Profile = async () => {
   const user = await currentUser();
@@ -24,6 +26,7 @@ const Profile = async () => {
   const sessionHistory = await getUserSessions(user.id);
   const sessionCount = await getUserSessionCount(user.id);
   const bookmarkedCompanions = await getBookmarkedCompanions(user.id);
+  const summaryEmails = await getSummaryEmailsEnabled();
 
   return (
     <main className="min-lg:w-3/4">
@@ -42,6 +45,7 @@ const Profile = async () => {
             <p className="text-sm text-muted-foreground">
               {user.emailAddresses[0].emailAddress}
             </p>
+            <SummaryEmailToggle initialEnabled={summaryEmails} />
           </div>
         </div>
         <div className="flex gap-4">

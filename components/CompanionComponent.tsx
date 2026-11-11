@@ -56,7 +56,7 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
             try {
                 const result = await completeSession(companionId, transcriptRef.current);
                 if(!result.success) setSummary({ status: 'unavailable', reason: result.error });
-                else if(result.summary) setSummary({ status: 'ready', summary: result.summary });
+                else if(result.summary) setSummary({ status: 'ready', summary: result.summary, emailQueued: result.emailQueued });
                 else setSummary({ status: 'unavailable', reason: result.summaryError ?? 'No summary for this lesson.' });
             } catch {
                 setSummary({ status: 'unavailable', reason: 'Could not save this session.' });

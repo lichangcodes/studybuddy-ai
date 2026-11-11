@@ -3,10 +3,12 @@
 import {auth} from "@clerk/nextjs/server";
 import {createSupabaseClient} from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import {companionSchema, transcriptSchema, type CompanionInput} from "@/lib/validations";
 import {isGeminiConfigured} from "@/lib/gemini";
 import {isSummaryConfigured, summarizeSession, type SessionSummary, type TranscriptMessage} from "@/lib/summary";
 import {generateDemoLesson, type DemoLine} from "@/lib/demo-lesson";
+import {prepareLessonSummaryEmail, sendAndLogLessonSummaryEmail} from "@/lib/email/deliver";
 import {quoteFilterValue} from "@/lib/utils";
 
 // Every readable companion column. `author` (a Clerk user id) is not readable through
@@ -91,7 +93,7 @@ const MIN_SUMMARY_MESSAGES = 4;
 
 type CompleteSessionResult =
     | { success: false; error: string }
-    | { success: true; sessionId: string; summary: SessionSummary | null; summaryError?: string };
+    | { success: true; sessionId: string; summary: SessionSummary | null; summaryError?: string; emailQueued?: boolean };
 
 // Records a finished session, then summarises its transcript with Claude. The session is
 // recorded even when the summary is skipped or fails, so history never depends on the model.
@@ -147,7 +149,22 @@ export const completeSession = async (companionId: string, transcript: Transcrip
 
     if(saveError) console.error('Saving session summary failed', saveError);
 
-    return done(summary);
+    // Email a copy. Deciding whether to is quick and happens now, so the page can say
+    // so; the send itself runs after the response, so the student isn't kept waiting.
+    let email = null;
+    try {
+        email = await prepareLessonSummaryEmail(userId);
+    } catch(e) {
+        console.error('Preparing lesson summary email failed', e);
+    }
+    if(email) {
+        const prepared = email;
+        after(() => sendAndLogLessonSummaryEmail({
+            email: prepared, userId, sessionId: session.id, companion, summary,
+        }));
+    }
+
+    return { success: true, sessionId: session.id, summary, emailQueued: Boolean(email) };
 }
 
 const DAILY_DEMO_LESSON_LIMIT = 30;
