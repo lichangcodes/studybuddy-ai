@@ -12,7 +12,10 @@ export const companionSchema = z.object({
     topic: z.string().trim().min(1, { message: 'Topic is required.'}).max(500),
     voice: z.enum(voiceOptions, { message: 'Voice is required.'}),
     style: z.enum(styleOptions, { message: 'Style is required.'}),
-    duration: z.coerce.number().int().min(1, { message: 'Duration is required.'}).max(MAX_SESSION_MINUTES, { message: `Sessions can be at most ${MAX_SESSION_MINUTES} minutes.`}),
+    duration: z.coerce.number<number | string>().int().min(1, { message: 'Duration is required.'}).max(MAX_SESSION_MINUTES, { message: `Sessions can be at most ${MAX_SESSION_MINUTES} minutes.`}),
 });
 
-export type CompanionInput = z.infer<typeof companionSchema>;
+// What the form holds before validation (duration may still be a string) ...
+export type CompanionFormValues = z.input<typeof companionSchema>;
+// ... and the validated, coerced value the server receives.
+export type CompanionInput = z.output<typeof companionSchema>;

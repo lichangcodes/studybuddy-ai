@@ -23,7 +23,7 @@ import {subjects} from "@/constants";
 import {Textarea} from "@/components/ui/textarea";
 import {createCompanion} from "@/lib/actions/companion.actions";
 import {useRouter} from "next/navigation";
-import {companionSchema, type CompanionInput} from "@/lib/validations";
+import {companionSchema, type CompanionFormValues, type CompanionInput} from "@/lib/validations";
 
 // Selects start empty so they show their placeholder; the schema rejects '' on submit.
 const defaultValues = {
@@ -33,11 +33,11 @@ const defaultValues = {
     voice: '',
     style: '',
     duration: 15,
-} as unknown as CompanionInput;
+} as unknown as CompanionFormValues;
 
 const CompanionForm = () => {
     const router = useRouter();
-    const form = useForm<CompanionInput>({
+    const form = useForm<CompanionFormValues, unknown, CompanionInput>({
         resolver: zodResolver(companionSchema),
         defaultValues,
     })
