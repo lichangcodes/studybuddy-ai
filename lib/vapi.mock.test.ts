@@ -32,6 +32,30 @@ describe("MockVapi", () => {
         expect(events).not.toContain("call-end");
     });
 
+    it("plays a script set for the next session, then goes back to the built-in one", async () => {
+        const vapi = new MockVapi();
+        const events = recordEvents(vapi);
+
+        vapi.setScript([
+            { role: "assistant", text: "SELECT picks columns." },
+            { role: "user", text: "And FROM picks the table?" },
+        ]);
+        await vapi.start();
+        vi.runAllTimers();
+
+        expect(events.filter((e) => e.includes(": "))).toEqual([
+            "assistant: SELECT picks columns.",
+            "user: And FROM picks the table?",
+        ]);
+
+        vapi.stop();
+        events.length = 0;
+        await vapi.start(undefined, { variableValues: { topic: "SQL" } });
+        vi.runAllTimers();
+
+        expect(events).toContain("assistant: Hello, let's start the session. Today we'll be talking about SQL.");
+    });
+
     it("emits call-end once on stop and cancels the rest of the script", async () => {
         const vapi = new MockVapi();
         const events = recordEvents(vapi);

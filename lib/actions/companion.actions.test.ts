@@ -3,12 +3,15 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { createSupabaseClient } from "@/lib/supabase";
 import { isSummaryConfigured, summarizeSession } from "@/lib/summary";
+import { isGeminiConfigured } from "@/lib/gemini";
+import { generateDemoLesson } from "@/lib/demo-lesson";
 import {
     addBookmark,
     completeSession,
     createCompanion,
     getAllCompanions,
     getCompanion,
+    getDemoLesson,
     getMyCompanions,
     getRecentSessions,
     newCompanionPermissions,
@@ -18,6 +21,8 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({ createSupabaseClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/summary", () => ({ summarizeSession: vi.fn(), isSummaryConfigured: vi.fn() }));
+vi.mock("@/lib/gemini", () => ({ isGeminiConfigured: vi.fn() }));
+vi.mock("@/lib/demo-lesson", () => ({ generateDemoLesson: vi.fn() }));
 
 type QueryResult = { data?: unknown; error?: { code?: string; message: string } | null; count?: number | null };
 type Call = { table: string; method: string; args: unknown[] };
@@ -84,6 +89,8 @@ const validCompanion = {
 beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(isSummaryConfigured).mockReturnValue(true);
+    vi.mocked(isGeminiConfigured).mockReturnValue(true);
+    vi.unstubAllEnvs();
 });
 
 describe("newCompanionPermissions", () => {
@@ -392,5 +399,65 @@ describe("completeSession", () => {
 
         expect(await completeSession("c1", [...transcript])).toEqual({ success: false, error: "Failed to record the session." });
         expect(summarizeSession).not.toHaveBeenCalled();
+    });
+});
+
+describe("getDemoLesson", () => {
+    const lesson = [
+        { role: "assistant", text: "SELECT picks columns." },
+        { role: "user", text: "And FROM picks the table?" },
+    ] as const;
+
+    beforeEach(() => vi.stubEnv("NEXT_PUBLIC_VAPI_MOCK", "true"));
+
+    it("does nothing outside demo mode", async () => {
+        vi.stubEnv("NEXT_PUBLIC_VAPI_MOCK", "false");
+        signIn("user_1");
+        const calls = mockSupabase();
+
+        expect(await getDemoLesson("c1")).toBeNull();
+        expect(calls.calls).toHaveLength(0);
+        expect(generateDemoLesson).not.toHaveBeenCalled();
+    });
+
+    it("does nothing for signed-out users", async () => {
+        signOut();
+        mockSupabase();
+
+        expect(await getDemoLesson("c1")).toBeNull();
+        expect(generateDemoLesson).not.toHaveBeenCalled();
+    });
+
+    it("writes the lesson from the stored companion, not client input", async () => {
+        signIn("user_1");
+        const calls = mockSupabase({
+            session_history: [{ count: 3 }],
+            companions: [{ data: { id: "c1", subject: "coding", topic: "SQL basics", style: "casual" } }],
+        });
+        vi.mocked(generateDemoLesson).mockResolvedValue([...lesson]);
+
+        expect(await getDemoLesson("c1")).toEqual(lesson);
+        expect(generateDemoLesson).toHaveBeenCalledWith({ subject: "coding", topic: "SQL basics", style: "casual" });
+        expect(calls.callsTo("session_history", "eq")[0].args).toEqual(["user_id", "user_1"]);
+    });
+
+    it("stops after the daily limit", async () => {
+        signIn("user_1");
+        mockSupabase({ session_history: [{ count: 30 }] });
+
+        expect(await getDemoLesson("c1")).toBeNull();
+        expect(generateDemoLesson).not.toHaveBeenCalled();
+    });
+
+    it("falls back quietly when the model call fails", async () => {
+        signIn("user_1");
+        mockSupabase({
+            session_history: [{ count: 0 }],
+            companions: [{ data: { id: "c1", subject: "coding", topic: "SQL", style: "casual" } }],
+        });
+        vi.mocked(generateDemoLesson).mockRejectedValue(new Error("503"));
+        vi.spyOn(console, "error").mockImplementation(() => {});
+
+        expect(await getDemoLesson("c1")).toBeNull();
     });
 });

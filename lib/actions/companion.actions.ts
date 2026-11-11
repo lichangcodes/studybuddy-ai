@@ -4,7 +4,9 @@ import {auth} from "@clerk/nextjs/server";
 import {createSupabaseClient} from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import {companionSchema, transcriptSchema, type CompanionInput} from "@/lib/validations";
+import {isGeminiConfigured} from "@/lib/gemini";
 import {isSummaryConfigured, summarizeSession, type SessionSummary, type TranscriptMessage} from "@/lib/summary";
+import {generateDemoLesson, type DemoLine} from "@/lib/demo-lesson";
 import {quoteFilterValue} from "@/lib/utils";
 
 // Every readable companion column. `author` (a Clerk user id) is not readable through
@@ -146,6 +148,41 @@ export const completeSession = async (companionId: string, transcript: Transcrip
     if(saveError) console.error('Saving session summary failed', saveError);
 
     return done(summary);
+}
+
+const DAILY_DEMO_LESSON_LIMIT = 30;
+
+// Demo mode only: a scripted lesson on the companion's topic for the mock voice
+// client to replay. Null means "use the built-in script", so any failure is quiet.
+export const getDemoLesson = async (companionId: string): Promise<DemoLine[] | null> => {
+    // Read at call time (not the client module's constant) so the real voice mode
+    // never spends Gemini calls on this.
+    if(process.env.NEXT_PUBLIC_VAPI_MOCK !== 'true' || !isGeminiConfigured()) return null;
+
+    const { userId } = await auth();
+    if(!userId) return null;
+
+    try {
+        // Lessons end in a session_history row, so that count bounds the Gemini calls
+        // one user can trigger.
+        const supabase = createSupabaseClient();
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { count, error } = await supabase
+            .from('session_history')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .gte('created_at', since);
+        if(error || (count ?? 0) >= DAILY_DEMO_LESSON_LIMIT) return null;
+
+        // Subject, topic and style come from the database, not the client.
+        const companion = await getCompanion(companionId);
+        if(!companion) return null;
+
+        return await generateDemoLesson({ subject: companion.subject, topic: companion.topic, style: companion.style });
+    } catch(e) {
+        console.error('Demo lesson failed', e);
+        return null;
+    }
 }
 
 export const getRecentSessions = async (limit = 10) => {

@@ -34,7 +34,7 @@ npm run dev
 
 Then open http://localhost:3000.
 
-Set `NEXT_PUBLIC_VAPI_MOCK=true` to replay a scripted lesson instead of calling Vapi, so sessions can be tried without a microphone or Vapi credits.
+Set `NEXT_PUBLIC_VAPI_MOCK=true` to replay a scripted lesson instead of calling Vapi, so sessions can be tried without a microphone or Vapi credits. With `GEMINI_API_KEY` set, Gemini writes that lesson for the companion's subject and topic; otherwise a short built-in script plays.
 
 ## Deployment
 
@@ -42,6 +42,6 @@ The app deploys to Vercel as a standard Next.js project:
 
 1. Import the GitHub repository in Vercel (framework preset: Next.js).
 2. Add the variables from `.env.example` under Project Settings → Environment Variables.
-3. For a public demo, set `NEXT_PUBLIC_VAPI_MOCK=true`. Visitors get a simulated session and the page says so, and no Vapi credits are spent.
+3. For a public demo, set `NEXT_PUBLIC_VAPI_MOCK=true`. Visitors get a simulated lesson on the companion's topic and the page says so, and no Vapi credits are spent.
 4. For post-session summaries, set `GEMINI_API_KEY` (free key from Google AI Studio). Without it, sessions are still recorded but no summary is generated. On the free tier Google may use prompts to improve its products, so use a paid key before handling real user data.
 5. Apply the SQL files in `supabase/migrations/` in order in the Supabase SQL Editor, and add the Clerk domain to Supabase's third-party auth settings.

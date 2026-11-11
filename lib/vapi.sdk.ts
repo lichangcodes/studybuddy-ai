@@ -1,5 +1,5 @@
 import Vapi from "@vapi-ai/web";
-import { MockVapi } from "@/lib/vapi.mock";
+import { MockVapi, type ScriptLine } from "@/lib/vapi.mock";
 
 export const isVapiMock = process.env.NEXT_PUBLIC_VAPI_MOCK === 'true';
 
@@ -11,3 +11,8 @@ if(isVapiMock && typeof window !== 'undefined') {
 export const vapi: Vapi = isVapiMock
     ? (new MockVapi() as unknown as Vapi)
     : new Vapi(process.env.NEXT_PUBLIC_VAPI_WEB_TOKEN!);
+
+// Demo mode: the lesson the next simulated session replays. No-op with the real client.
+export const setDemoScript = (script: ScriptLine[] | null) => {
+    if(isVapiMock) (vapi as unknown as MockVapi).setScript(script);
+};

@@ -2,11 +2,11 @@
 
 import {useEffect, useRef, useState} from 'react'
 import {cn, configureAssistant, getSubjectColor} from "@/lib/utils";
-import {isVapiMock, vapi} from "@/lib/vapi.sdk";
+import {isVapiMock, setDemoScript, vapi} from "@/lib/vapi.sdk";
 import Image from "next/image";
 import Lottie, {LottieRefCurrentProps} from "lottie-react";
 import soundwaves from '@/constants/soundwaves.json'
-import {completeSession} from "@/lib/actions/companion.actions";
+import {completeSession, getDemoLesson} from "@/lib/actions/companion.actions";
 import SessionSummaryCard, {type SummaryState} from "@/components/SessionSummaryCard";
 
 enum CallStatus {
@@ -103,6 +103,10 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
 
     const handleCall = async () => {
         setCallStatus(CallStatus.CONNECTING)
+
+        // Demo mode: a lesson on this companion's topic, written by Gemini. On any
+        // failure the mock client plays its built-in script instead.
+        if(isVapiMock) setDemoScript(await getDemoLesson(companionId).catch(() => null));
 
         const assistantOverrides = {
             variableValues: { subject, topic, style },
