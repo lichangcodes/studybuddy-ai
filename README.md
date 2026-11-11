@@ -29,3 +29,14 @@ npm run dev
 ```
 
 Then open http://localhost:3000.
+
+Set `NEXT_PUBLIC_VAPI_MOCK=true` to replay a scripted lesson instead of calling Vapi, so sessions can be tried without a microphone or Vapi credits.
+
+## Deployment
+
+The app deploys to Vercel as a standard Next.js project:
+
+1. Import the GitHub repository in Vercel (framework preset: Next.js).
+2. Add the variables from `.env.example` under Project Settings → Environment Variables.
+3. For a public demo, set `NEXT_PUBLIC_VAPI_MOCK=true`. Visitors get a simulated session and the page says so, and no Vapi credits are spent.
+4. Apply the SQL files in `supabase/migrations/` in order in the Supabase SQL Editor, and add the Clerk domain to Supabase's third-party auth settings.

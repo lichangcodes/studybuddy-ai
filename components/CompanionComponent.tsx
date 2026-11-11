@@ -2,7 +2,7 @@
 
 import {useEffect, useRef, useState} from 'react'
 import {cn, configureAssistant, getSubjectColor} from "@/lib/utils";
-import {vapi} from "@/lib/vapi.sdk";
+import {isVapiMock, vapi} from "@/lib/vapi.sdk";
 import Image from "next/image";
 import Lottie, {LottieRefCurrentProps} from "lottie-react";
 import soundwaves from '@/constants/soundwaves.json'
@@ -153,6 +153,11 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
                         : 'Start Session'
                         }
                     </button>
+                    {isVapiMock && (
+                        <p className="text-sm text-muted-foreground text-center">
+                            Demo mode: the voice session is a simulated lesson, no microphone needed.
+                        </p>
+                    )}
                 </div>
             </section>
 
