@@ -6,7 +6,9 @@ import { z } from "zod";
 
 // Free tier of the Gemini API. Free-tier prompts may be used by Google to improve
 // its products; switch to a paid key before handling real user data.
-export const SUMMARY_MODEL = "gemini-3.8-flash";
+// Flash-Lite rather than Flash: summarising a lesson is easy for it, and the free
+// tier's Flash models were often unavailable (503 "high demand").
+export const SUMMARY_MODEL = "gemini-3.5-flash-lite";
 export const SUMMARY_TIMEOUT_MS = 25_000;
 
 export const sessionSummarySchema = z.object({

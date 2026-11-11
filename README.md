@@ -22,7 +22,7 @@ A voice-first AI learning platform. Users build personalized "learning companion
 | Database | Supabase (PostgreSQL) |
 | Auth & billing | Clerk |
 | Voice AI | Vapi (Deepgram STT, OpenAI LLM, ElevenLabs TTS) |
-| Summaries | Gemini API (`gemini-3.8-flash`, structured JSON output) |
+| Summaries | Gemini API (`gemini-3.5-flash-lite`, structured JSON output) |
 
 ## Getting Started
 
