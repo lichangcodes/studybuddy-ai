@@ -7,6 +7,7 @@ import { z } from "zod";
 // Free tier of the Gemini API. Free-tier prompts may be used by Google to improve
 // its products; switch to a paid key before handling real user data.
 export const SUMMARY_MODEL = "gemini-3.8-flash";
+export const SUMMARY_TIMEOUT_MS = 25_000;
 
 export const sessionSummarySchema = z.object({
     overview: z.string(),
@@ -55,6 +56,12 @@ export const summarizeSession = async ({ subject, topic, transcript }: {
         response_format: { type: "text", mime_type: "application/json", schema: summaryJsonSchema },
         // The transcript is stored in our own database; Google doesn't need to keep it.
         store: false,
+    }, {
+        // The student is waiting on the session page, and the server action has 60s
+        // on Vercel. On a 503 ("high demand", common on the free tier) the SDK's
+        // default backoff retries for close to a minute, so fail fast instead.
+        timeout_ms: SUMMARY_TIMEOUT_MS,
+        retries: { strategy: "none" },
     });
 
     if(!interaction.output_text) return null;
