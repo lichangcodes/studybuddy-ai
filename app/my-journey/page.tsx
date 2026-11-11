@@ -7,7 +7,7 @@ import {
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import {
-  getUserCompanions,
+  getMyCompanions,
   getUserSessions,
   getUserSessionCount,
   getBookmarkedCompanions,
@@ -20,7 +20,7 @@ const Profile = async () => {
 
   if (!user) redirect("/sign-in");
 
-  const companions = await getUserCompanions(user.id);
+  const companions = await getMyCompanions();
   const sessionHistory = await getUserSessions(user.id);
   const sessionCount = await getUserSessionCount(user.id);
   const bookmarkedCompanions = await getBookmarkedCompanions(user.id);

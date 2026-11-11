@@ -7,6 +7,7 @@ import {
     createCompanion,
     getAllCompanions,
     getCompanion,
+    getMyCompanions,
     getRecentSessions,
     newCompanionPermissions,
 } from "@/lib/actions/companion.actions";
@@ -105,17 +106,17 @@ describe("newCompanionPermissions", () => {
         ["10_companion_limit", 10, false],
     ])("with %s and %i companions returns %s", async (feature, count, expected) => {
         signIn("user_1", { feature });
-        const db = mockSupabase({ companions: [{ count }] });
+        const db = mockSupabase({ "rpc:count_my_companions": [{ data: count }] });
 
         expect(await newCompanionPermissions()).toBe(expected);
-        // Counts in the database instead of fetching rows, scoped to the current user.
-        expect(db.callsTo("companions", "select")[0].args).toEqual(["id", { count: "exact", head: true }]);
-        expect(db.callsTo("companions", "eq")[0].args).toEqual(["author", "user_1"]);
+        // Counted in the database for the token's user; the client never filters on author.
+        expect(db.callsTo("rpc:count_my_companions", "rpc")).toHaveLength(1);
+        expect(db.callsTo("companions", "eq")).toHaveLength(0);
     });
 
     it("denies users without a plan feature", async () => {
         signIn("user_1");
-        mockSupabase({ companions: [{ count: 0 }] });
+        mockSupabase({ "rpc:count_my_companions": [{ data: 0 }] });
 
         expect(await newCompanionPermissions()).toBe(false);
     });
@@ -144,7 +145,7 @@ describe("createCompanion", () => {
 
     it("enforces the plan limit on the server", async () => {
         signIn("user_1", { feature: "3_companion_limit" });
-        const db = mockSupabase({ companions: [{ count: 3 }] });
+        const db = mockSupabase({ "rpc:count_my_companions": [{ data: 3 }] });
 
         const result = await createCompanion(validCompanion);
 
@@ -154,7 +155,10 @@ describe("createCompanion", () => {
 
     it("inserts only validated fields, authored by the current user", async () => {
         signIn("user_1", { feature: "3_companion_limit" });
-        const db = mockSupabase({ companions: [{ count: 1 }, { data: { id: "c1" } }] });
+        const db = mockSupabase({
+            "rpc:count_my_companions": [{ data: 1 }],
+            companions: [{ data: { id: "c1" } }],
+        });
 
         const result = await createCompanion({
             ...validCompanion,
@@ -227,6 +231,27 @@ describe("getAllCompanions", () => {
 
         expect(db.callsTo("companions", "eq")[0].args).toEqual(["subject", "maths"]);
         expect(db.callsTo("companions", "range")[0].args).toEqual([10, 19]);
+    });
+
+    it("selects explicit columns, never the author", async () => {
+        const db = mockSupabase({ companions: [{ data: [] }] });
+
+        await getAllCompanions({});
+
+        const columns = db.callsTo("companions", "select")[0].args[0] as string;
+        expect(columns).not.toContain("*");
+        expect(columns).not.toContain("author");
+        expect(columns.split(", ")).toEqual(expect.arrayContaining(["id", "name", "subject", "topic", "duration"]));
+    });
+});
+
+describe("getMyCompanions", () => {
+    it("lets the database resolve the user from the token", async () => {
+        const db = mockSupabase({ "rpc:get_my_companions": [{ data: [{ id: "c1" }] }] });
+
+        expect(await getMyCompanions()).toEqual([{ id: "c1" }]);
+        expect(db.callsTo("rpc:get_my_companions", "rpc")).toHaveLength(1);
+        expect(db.callsTo("companions", "select")).toHaveLength(0);
     });
 });
 

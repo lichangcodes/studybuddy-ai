@@ -6,6 +6,10 @@ import { revalidatePath } from "next/cache";
 import {companionSchema, type CompanionInput} from "@/lib/validations";
 import {quoteFilterValue} from "@/lib/utils";
 
+// Every readable companion column. `author` (a Clerk user id) is not readable through
+// the API, so queries must list columns instead of using `*`.
+const COMPANION_COLUMNS = 'id, created_at, name, subject, topic, style, voice, duration';
+
 type CreateCompanionResult =
     | { success: true; data: { id: string } }
     | { success: false; error: string };
@@ -42,7 +46,7 @@ export const createCompanion = async (formData: CompanionInput): Promise<CreateC
 export const getAllCompanions = async ({ limit = 10, page = 1, subject, topic }: GetAllCompanions) => {
     const supabase = createSupabaseClient();
 
-    let query = supabase.from('companions').select();
+    let query = supabase.from('companions').select(COMPANION_COLUMNS);
 
     if(subject) {
         query = query.eq('subject', String(subject))
@@ -66,7 +70,7 @@ export const getCompanion = async (id: string) => {
 
     const { data, error } = await supabase
         .from('companions')
-        .select()
+        .select(COMPANION_COLUMNS)
         .eq('id', id)
         .maybeSingle();
 
@@ -93,14 +97,13 @@ export const addToSessionHistory = async (companionId: string) => {
 
 export const getRecentSessions = async (limit = 10) => {
     const supabase = createSupabaseClient();
-    // Session rows are private under RLS; this function returns recent sessions across
-    // all users without exposing who ran them.
+    // Session rows are private under RLS; this function returns each companion's latest
+    // session across all users without exposing who ran them or who wrote the companion.
     const { data, error } = await supabase
         .rpc('get_recent_sessions', { max_rows: limit })
 
     if(error) throw new Error(error.message);
 
-    // The same companion can appear in several sessions, so keep the session id for list keys.
     return (data as { session_id: string; companion: Companion }[])
         .map(({ session_id, companion }) => ({ ...companion, sessionId: session_id }));
 }
@@ -109,7 +112,7 @@ export const getUserSessions = async (userId: string, limit = 10) => {
     const supabase = createSupabaseClient();
     const { data, error } = await supabase
         .from('session_history')
-        .select(`id, companions:companion_id (*)`)
+        .select(`id, companions:companion_id (${COMPANION_COLUMNS})`)
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -131,12 +134,11 @@ export const getUserSessionCount = async (userId: string) => {
     return count ?? 0;
 }
 
-export const getUserCompanions = async (userId: string) => {
+// Companions created by the signed-in user. The database resolves the user from the
+// session token, since the author column is not readable through the API.
+export const getMyCompanions = async () => {
     const supabase = createSupabaseClient();
-    const { data, error } = await supabase
-        .from('companions')
-        .select()
-        .eq('author', userId)
+    const { data, error } = await supabase.rpc('get_my_companions');
 
     if(error) throw new Error(error.message);
 
@@ -159,15 +161,11 @@ export const newCompanionPermissions = async () => {
 
     const supabase = createSupabaseClient();
 
-    // head: true makes Postgres return only the count, not the rows.
-    const { count, error } = await supabase
-        .from('companions')
-        .select('id', { count: 'exact', head: true })
-        .eq('author', userId)
+    const { data: count, error } = await supabase.rpc('count_my_companions');
 
     if(error) throw new Error(error.message);
 
-    return (count ?? 0) < limit;
+    return Number(count ?? 0) < limit;
 }
 
 // Bookmarks
@@ -225,7 +223,7 @@ export const getBookmarkedCompanions = async (userId: string) => {
   const supabase = createSupabaseClient();
   const { data, error } = await supabase
     .from("bookmarks")
-    .select(`companions:companion_id (*)`) // Notice the (*) to get all the companion data
+    .select(`companions:companion_id (${COMPANION_COLUMNS})`)
     .eq("user_id", userId);
   if (error) {
     throw new Error(error.message);
